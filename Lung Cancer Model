@@ -1,0 +1,118 @@
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+from sklearn.model_selection import train_test_split, GridSearchCV
+from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
+from sklearn.preprocessing import StandardScaler
+from imblearn.over_sampling import SMOTE
+from sklearn.metrics import accuracy_score, classification_report, confusion_matrix
+
+# Load dataset
+print("Loading dataset...")
+df = pd.read_csv(r"C:\Users\HP\OneDrive\Desktop\dataset_med.csv")
+print("Dataset loaded successfully!")
+
+# Feature Engineering: Extract treatment duration
+df['diagnosis_date'] = pd.to_datetime(df['diagnosis_date'])
+df['end_treatment_date'] = pd.to_datetime(df['end_treatment_date'])
+df['treatment_duration'] = (df['end_treatment_date'] - df['diagnosis_date']).dt.days
+
+df.drop(['id', 'diagnosis_date', 'end_treatment_date'], axis=1, inplace=True)
+
+# Encode categorical variables
+df = pd.get_dummies(df, columns=['gender', 'country', 'cancer_stage', 'family_history', 'smoking_status', 'treatment_type'], drop_first=True)
+
+# Separate features and target variable
+X = df.drop('survived', axis=1)
+y = df['survived']
+
+# Handle class imbalance using SMOTE
+X_resampled, y_resampled = SMOTE(random_state=42).fit_resample(X, y)
+
+# Split dataset into training and testing sets
+X_train, X_test, y_train, y_test = train_test_split(X_resampled, y_resampled, test_size=0.2, random_state=42)
+
+# Standardize numerical features
+scaler = StandardScaler()
+X_train = scaler.fit_transform(X_train)
+X_test = scaler.transform(X_test)
+
+# Hyperparameter tuning for Random Forest
+param_grid = {'n_estimators': [100], 'max_depth': [10, 20], 'min_samples_split': [2]}
+best_rf = GridSearchCV(RandomForestClassifier(random_state=42), param_grid, cv=3, scoring='accuracy', n_jobs=-1).fit(X_train, y_train).best_estimator_
+
+# Train Gradient Boosting model
+gb_model = GradientBoostingClassifier(n_estimators=200, learning_rate=0.05, max_depth=5, random_state=42)
+gb_model.fit(X_train, y_train)
+
+# Make predictions
+y_pred_rf = best_rf.predict(X_test)
+y_pred_gb = gb_model.predict(X_test)
+
+# Evaluate models
+def evaluate_model(model_name, y_test, y_pred):
+    accuracy = accuracy_score(y_test, y_pred)
+    print(f"{model_name} Accuracy: {accuracy:.4f}")
+    print(classification_report(y_test, y_pred))
+    return accuracy
+
+accuracy_rf = evaluate_model("Random Forest", y_test, y_pred_rf)
+accuracy_gb = evaluate_model("Gradient Boosting", y_test, y_pred_gb)
+
+# Feature Importance
+feature_importances = pd.Series(best_rf.feature_importances_, index=X.columns).sort_values(ascending=False)
+plt.figure(figsize=(10,6))
+sns.barplot(x=feature_importances.head(10), y=feature_importances.head(10).index)
+plt.title("Top 10 Important Features")
+plt.xlabel("Feature Importance Score")
+plt.ylabel("Features")
+plt.show()
+
+# Confusion Matrices
+fig, axes = plt.subplots(1, 2, figsize=(12, 5))
+sns.heatmap(confusion_matrix(y_test, y_pred_rf), annot=True, fmt='d', cmap='Blues', ax=axes[0])
+axes[0].set_title("Confusion Matrix - Random Forest")
+axes[0].set_xlabel("Predicted")
+axes[0].set_ylabel("Actual")
+
+sns.heatmap(confusion_matrix(y_test, y_pred_gb), annot=True, fmt='d', cmap='Greens', ax=axes[1])
+axes[1].set_title("Confusion Matrix - Gradient Boosting")
+axes[1].set_xlabel("Predicted")
+axes[1].set_ylabel("Actual")
+plt.show()
+
+# Accuracy Comparison
+plt.figure(figsize=(6,4))
+sns.barplot(x=["Random Forest", "Gradient Boosting"], y=[accuracy_rf, accuracy_gb], palette="coolwarm")
+plt.title("Model Accuracy Comparison")
+plt.ylabel("Accuracy Score")
+plt.ylim(0, 1)
+plt.show()
+
+# Additional Visualizations
+if 'cancer_stage_Stage IV' in df.columns:
+    df_stage = df.groupby([col for col in df.columns if "cancer_stage" in col])['survived'].mean()
+    df_stage.plot(kind='bar', color='skyblue', figsize=(8,5))
+    plt.title("Survival Rate by Cancer Stage")
+    plt.ylabel("Survival Probability")
+    plt.show()
+
+if 'smoking_status_Smoker' in df.columns:
+    sns.barplot(x=df['smoking_status_Smoker'], y=df['survived'], palette="coolwarm")
+    plt.title("Survival Rate by Smoking Status")
+    plt.ylabel("Survival Probability")
+    plt.xlabel("Smoking Status (0=Non-Smoker, 1=Smoker)")
+    plt.show()
+
+if 'age' in df.columns:
+    plt.figure(figsize=(8,5))
+    sns.kdeplot(df[df['survived'] == 1]['age'], color="green", label="Survived", linewidth=2)
+    sns.kdeplot(df[df['survived'] == 0]['age'], color="red", label="Did Not Survive", linewidth=2)
+    plt.title("Age Distribution of Survivors vs. Non-Survivors")
+    plt.xlabel("Age")
+    plt.ylabel("Density")
+    plt.legend()
+    plt.show()
+
+print("Model evaluation and feature analysis completed successfully.")
