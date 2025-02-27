@@ -1,0 +1,85 @@
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+from sklearn.model_selection import train_test_split
+from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
+from sklearn.preprocessing import StandardScaler
+from imblearn.over_sampling import SMOTE
+from sklearn.metrics import accuracy_score, classification_report, confusion_matrix
+
+# Load dataset
+print("Loading dataset...")
+df = pd.read_csv(r"C:\Users\HP\OneDrive\Desktop\forest_cover_prediction\train.csv")
+print("Dataset loaded successfully!")
+
+# Drop 'Id' column as it's not a useful feature
+df.drop(columns=['Id'], inplace=True)
+
+# Split features and target variable
+X = df.drop(columns=['Cover_Type'])
+y = df['Cover_Type']
+
+# Standardize numerical features
+scaler = StandardScaler()
+numerical_cols = X.columns[:10]  # First 10 columns are numerical
+X[numerical_cols] = scaler.fit_transform(X[numerical_cols])
+
+# Handle class imbalance using SMOTE
+X_resampled, y_resampled = SMOTE(random_state=42).fit_resample(X, y)
+
+# Split dataset into training and testing sets
+X_train, X_test, y_train, y_test = train_test_split(X_resampled, y_resampled, test_size=0.2, random_state=42)
+
+# Train models
+rf_model = RandomForestClassifier(n_estimators=100, random_state=42)
+gb_model = GradientBoostingClassifier(n_estimators=100, learning_rate=0.1, random_state=42)
+
+rf_model.fit(X_train, y_train)
+gb_model.fit(X_train, y_train)
+
+# Make predictions
+y_pred_rf = rf_model.predict(X_test)
+y_pred_gb = gb_model.predict(X_test)
+
+# Evaluate models
+def evaluate_model(model_name, y_test, y_pred):
+    accuracy = accuracy_score(y_test, y_pred)
+    print(f"{model_name} Accuracy: {accuracy:.4f}")
+    print(classification_report(y_test, y_pred))
+    return accuracy
+
+accuracy_rf = evaluate_model("Random Forest", y_test, y_pred_rf)
+accuracy_gb = evaluate_model("Gradient Boosting", y_test, y_pred_gb)
+
+# Feature Importance
+feature_importances = pd.Series(rf_model.feature_importances_, index=X.columns).sort_values(ascending=False)
+plt.figure(figsize=(10,6))
+sns.barplot(x=feature_importances.head(10), y=feature_importances.head(10).index)
+plt.title("Top 10 Important Features")
+plt.xlabel("Feature Importance Score")
+plt.ylabel("Features")
+plt.show()
+
+# Confusion Matrices
+fig, axes = plt.subplots(1, 2, figsize=(12, 5))
+sns.heatmap(confusion_matrix(y_test, y_pred_rf), annot=True, fmt='d', cmap='Blues', ax=axes[0])
+axes[0].set_title("Confusion Matrix - Random Forest")
+axes[0].set_xlabel("Predicted")
+axes[0].set_ylabel("Actual")
+
+sns.heatmap(confusion_matrix(y_test, y_pred_gb), annot=True, fmt='d', cmap='Greens', ax=axes[1])
+axes[1].set_title("Confusion Matrix - Gradient Boosting")
+axes[1].set_xlabel("Predicted")
+axes[1].set_ylabel("Actual")
+plt.show()
+
+# Accuracy Comparison
+plt.figure(figsize=(6,4))
+sns.barplot(x=["Random Forest", "Gradient Boosting"], y=[accuracy_rf, accuracy_gb], palette="coolwarm")
+plt.title("Model Accuracy Comparison")
+plt.ylabel("Accuracy Score")
+plt.ylim(0, 1)
+plt.show()
+
+print("Model evaluation and feature analysis completed successfully.")
